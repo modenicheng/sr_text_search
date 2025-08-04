@@ -1,0 +1,19 @@
+from models import *
+import aiohttp
+import asyncio
+
+async def update_db():
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+                "https://homdgcat.wiki/TextMap/SR_Talk_CH.json", ) as res:
+            data = await res.json()
+    with Session(engine) as session:
+        for item in data:
+            new_item = Dialog(idx=item["I"],
+                                    speaker=item['S'],
+                                    text=item["T"])
+            session.add(new_item)
+
+
+if __name__ == "__main__":
+    asyncio.run(update_db())
