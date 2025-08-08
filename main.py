@@ -79,6 +79,35 @@ async def text(idx: int | None = None,
     return
 
 
+@app.get("/speakers/")
+async def speakers(offset: int = 0,
+                   limit: int = 200,
+                   query: str | None = None,
+                   session: Session = Depends(get_session)):
+    """Get a list of unique speakers in the dialog database.
+        获取对话数据库中所有唯一发言者的列表。
+
+    This endpoint returns a list of unique speakers in the dialog database, which can be used as filters for searching dialog lines.
+    该端点返回对话数据库中所有唯一发言者的列表，这些发言者可以作为搜索对话行的筛选条件。
+    
+    Args:
+        offset (int, optional): Pagination offset. Defaults to 0.
+                               分页偏移量。默认为0。
+        limit (int, optional): Pagination limit. Defaults to 200.
+                              分页限制。默认为200。
+                              
+    Returns:
+        List[str]: A list of unique speakers in the dialog database.
+                   对话数据库中所有唯一发言者的列表。
+    """
+    if query:
+        statement = select(Dialog.speaker).distinct().where(Dialog.speaker.like(f"%{query}%"))
+    else:
+        statement = select(Dialog.speaker).distinct()
+    statement = statement.offset(offset).limit(limit)
+    return session.exec(statement).all()
+
+
 @app.get("/dialog/")
 async def dialog(
     idx: int | None = None,
