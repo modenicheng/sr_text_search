@@ -24,13 +24,24 @@ Version / 版本: 1.0.0
 
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from h11 import Response
 from sqlmodel import or_
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from yarl import Query
 from models import *
+
+from pathlib import Path
+import os
+# 确保静态文件目录存在
+static_dir = Path("webpage/dist")
+if not static_dir.exists():
+    exit_code = os.system("cd webpage && yarn build")
+    if exit_code != 0:
+        raise Exception(
+            "Failed to build static files. Please check your environment.")
 
 app = FastAPI()
 
@@ -58,28 +69,18 @@ def on_startup():
     create_db_and_tables()
 
 
-@app.get("/")
-async def root():
+@app.get("/api/openapi/")
+async def openapi():
     """Redirect to the OpenAPI documentation page.
     重定向到OpenAPI文档页面。
-    
+
     This endpoint redirects users to the OpenAPI documentation page, where they can find detailed information about the API endpoints and their usage.
     该端点将用户重定向到OpenAPI文档页面，用户可以在该页面找到有关API端点和其用法的信息。
     """
     return RedirectResponse(url="/openapi.json")
 
 
-@app.get("/text/")
-async def text(idx: int | None = None,
-               keywords: str | None = None,
-               offset: int = 0,
-               limit: int = 200,
-               session: Session = Depends(get_session)):
-
-    return
-
-
-@app.get("/speakers/")
+@app.get("/api/speakers/")
 async def speakers(offset: int = 0,
                    limit: int = 200,
                    query: str | None = None,
@@ -101,14 +102,22 @@ async def speakers(offset: int = 0,
                    对话数据库中所有唯一发言者的列表。
     """
     if query:
-        statement = select(Dialog.speaker).distinct().where(Dialog.speaker.like(f"%{query}%"))
+        statement = select(Dialog.speaker).distinct().where(
+            Dialog.speaker.like(f"%{query}%"))
     else:
         statement = select(Dialog.speaker).distinct()
     statement = statement.offset(offset).limit(limit)
-    return session.exec(statement).all()
+    result = session.exec(statement).all()
+    total = session.exec(select(func.count(Dialog.speaker.distinct()))).one()
+    return JSONResponse({
+        "data":
+        result,
+        "total":
+        total
+    })
 
 
-@app.get("/dialog/")
+@app.get("/api/dialog/")
 async def dialog(
     idx: int | None = None,
     speakers: str | None = None,
@@ -199,12 +208,25 @@ async def dialog(
 
     elif idx is not None:
         statement = statement.where(Dialog.idx == idx)
-
+    
+    count_statement = select(func.count()).select_from(statement.subquery())
+    total = session.exec(count_statement).one()
+    
     # 应用分页
     statement = statement.offset(offset).limit(limit)
+    result = session.exec(statement).all()
+    
+    return JSONResponse({
+        "data": [item.model_dump() for item in result],
+        "total": total
+    })
 
-    results = session.exec(statement).all()
-    return results
+
+# PLACE STATIC FILES HERE, to avoid 404 error
+# mount static vue site. REQUIRE: yarn build in webpage dir
+app.mount("/",
+          StaticFiles(directory=str(static_dir), html=True),
+          name="webpage")
 
 
 def find_continuous_subarray(arr: List[int], target: int) -> List[int]:
